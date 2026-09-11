@@ -1,0 +1,46 @@
+{
+  "name": "polimax-next",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test:browser": "node tests/browser.mjs",
+    "start": ".venv/bin/python -m uvicorn app:app --app-dir backend --host 0.0.0.0 --port 5173",
+    "test:api": ".venv/bin/python tests/test_integration.py",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@fullcalendar/daygrid": "^6.1.15",
+    "@fullcalendar/interaction": "^6.1.15",
+    "@fullcalendar/list": "^6.1.15",
+    "@fullcalendar/luxon3": "^6.1.15",
+    "@fullcalendar/react": "^6.1.15",
+    "@fullcalendar/timegrid": "^6.1.15",
+    "@hookform/resolvers": "^3.9.1",
+    "@mui/material": "^5.17.1",
+    "@tanstack/react-query": "^5.62.0",
+    "@vitejs/plugin-react": "4.3.4",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.503.0",
+    "luxon": "^3.5.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.54.0",
+    "react-leaflet": "^4.2.1",
+    "react-router-dom": "^6.28.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.4.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "playwright": "1.51.1",
+    "prettier": "^3.6.2"
+  }
+}

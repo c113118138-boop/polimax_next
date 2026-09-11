@@ -1,0 +1,79 @@
+{
+  "table": {
+    "工案": {
+      "grid_key": "Reason_Case_Grid",
+      "city_field": "Reason_Case_city",
+      "district_field": "reasonCaseGridSelect",
+      "time_key": "Case_TimeRegistration",
+      "plate_field": "Case_car_plate",
+      "start_field": "Case_start",
+      "end_field": "Case_end"
+    },
+    "材料送貨": {
+      "grid_key": "Reason_Material_Delivering_Grid",
+      "city_field": "Reason_Material_Delivering_city",
+      "district_field": "reasonMaterialDeliveringGridSelect",
+      "time_key": "Material_Delivering_TimeRegistration",
+      "plate_field": "Material_Delivering_car_plate",
+      "start_field": "Material_Delivering_start",
+      "end_field": "Material_Delivering_end"
+    },
+    "新開發案": {
+      "grid_key": "Reason_New_Project_Grid",
+      "city_field": "Reason_New_Develop_Project_city",
+      "district_field": "reasonNewProjectGridSelect",
+      "time_key": "New_Project_TimeRegistration",
+      "plate_field": "New_Project_car_plate",
+      "start_field": "New_Project_start",
+      "end_field": "New_Project_end"
+    },
+    "客戶拜訪": {
+      "grid_key": "Reason_Client_Visiting_Grid",
+      "city_field": "Reason_Client_Visiting_city",
+      "district_field": "reasonClientVisitingGridSelect",
+      "time_key": "Client_Visiting_TimeRegistration",
+      "plate_field": "Client_Visiting_car_plate",
+      "start_field": "Client_Visiting_start",
+      "end_field": "Client_Visiting_end"
+    },
+    "成交案回訪": {
+      "grid_key": "Reason_Recall_Grid",
+      "city_field": "Reason_Recall_city",
+      "district_field": "reasonRecallGridSelect",
+      "time_key": "Recall_TimeRegistration",
+      "plate_field": "Recall_car_plate",
+      "start_field": "Recall_start",
+      "end_field": "Recall_end"
+    },
+    "參展": {
+      "grid_key": "Attending_Exhibition_Grid",
+      "city_field": "Reason_Attending_Exhibition_city",
+      "district_field": "attendingExhibitionGridSelect",
+      "time_key": "Attending_Exhibition_TimeRegistration",
+      "plate_field": "Attending_Exhibition_car_plate",
+      "start_field": "Attending_Exhibition_start",
+      "end_field": "Attending_Exhibition_end"
+    },
+    "其他": {
+      "grid_key": "Reason_Others_Grid",
+      "city_field": "Reason_Others_city",
+      "district_field": "reasonOthersGridSelect",
+      "time_key": "Others_TimeRegistration",
+      "plate_field": "Others_car_plate",
+      "start_field": "Others_start",
+      "end_field": "Others_end"
+    }
+  },
+  "reason_detail_field_map": {
+    "工案": "Case_ID_and_name",
+    "材料送貨": "Material_Delivering_client",
+    "新開發案": "New_develop_project_ID_and_Name",
+    "參展": "exhibit_name",
+    "其他": "Others_comment"
+  },
+  "employee_field_map": {
+    "工案": "Case_employee",
+    "材料送貨": "Material_delivering_employees",
+    "新開發案": "New_develop_project_employees"
+  }
+}
