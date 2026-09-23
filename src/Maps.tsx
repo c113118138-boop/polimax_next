@@ -21,7 +21,7 @@ import {
   ArrowRight,
   Telescope,
 } from "lucide-react";
-import { api, Resource, dateTime, localDate, localInput } from "./api";
+import { api, Resource, dateTime, localInput } from "./api";
 import { Empty, ErrorBox, Field, Loading, PageHead } from "./ui";
 function Focus({ points }: { points: any[] }) {
   const map = useMap();
@@ -35,8 +35,20 @@ function Focus({ points }: { points: any[] }) {
   }, [points, map]);
   return null;
 }
+function recentTrajectoryRange(days: number, end = new Date()) {
+  return {
+    from: localInput(
+      new Date(end.getTime() - days * 24 * 60 * 60 * 1000).toISOString(),
+    ),
+    to: localInput(end.toISOString()),
+  };
+}
 export function Positions() {
   const [params] = useSearchParams();
+  const [initialRange] = useState(() => recentTrajectoryRange(30));
+  const [range, setRange] = useState(
+    params.get("start") || params.get("end") ? "custom" : "30",
+  );
   const resources = useQuery({
       queryKey: ["resources"],
       queryFn: () => api<Resource[]>("/resources"),
@@ -50,12 +62,10 @@ export function Positions() {
     [from, setFrom] = useState(
       params.get("start")
         ? localInput(params.get("start")!)
-        : localDate() + "T00:00",
+        : initialRange.from,
     ),
     [to, setTo] = useState(
-      params.get("end")
-        ? localInput(params.get("end")!)
-        : localDate() + "T23:59:59",
+      params.get("end") ? localInput(params.get("end")!) : initialRange.to,
     ),
     [points, setPoints] = useState<any[]>([]),
     [searched, setSearched] = useState(false),
@@ -73,6 +83,20 @@ export function Positions() {
         : position && position.lat != null && position.lng != null
           ? [position]
           : [];
+  function clearHistory() {
+    setPoints([]);
+    setSearched(false);
+    setError("");
+  }
+  function changeRange(value: string) {
+    setRange(value);
+    if (value !== "custom") {
+      const dates = recentTrajectoryRange(Number(value));
+      setFrom(dates.from);
+      setTo(dates.to);
+    }
+    clearHistory();
+  }
   async function history() {
     setPoints([]);
     setError("");
@@ -140,46 +164,53 @@ export function Positions() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {rs
-            .filter((r) =>
-              [r.label, r.name, r.model]
-                .join(" ")
-                .toLowerCase()
-                .includes(search.toLowerCase()),
-            )
-            .map((r) => (
-              <button
-                key={r.id}
-                className={
-                  "map-resource " + (selected === r.id ? "active" : "")
-                }
-                onClick={() => {
-                  setSelected(r.id);
-                  setPoints([]);
-                  setSearched(false);
-                  setError("");
-                  if (r.kind !== "vehicle") setMode("latest");
-                }}
-              >
-                <div
+          <div
+            className="map-resource-list"
+            role="region"
+            aria-label="資源清單"
+            tabIndex={0}
+          >
+            {rs
+              .filter((r) =>
+                [r.label, r.name, r.model]
+                  .join(" ")
+                  .toLowerCase()
+                  .includes(search.toLowerCase()),
+              )
+              .map((r) => (
+                <button
+                  key={r.id}
                   className={
-                    "resource-icon " +
-                    (r.kind === "vehicle" ? "type-A" : "type-E")
+                    "map-resource " + (selected === r.id ? "active" : "")
                   }
+                  onClick={() => {
+                    setSelected(r.id);
+                    setPoints([]);
+                    setSearched(false);
+                    setError("");
+                    if (r.kind !== "vehicle") setMode("latest");
+                  }}
                 >
-                  {r.kind === "vehicle" ? (
-                    <CarFront size={21} />
-                  ) : (
-                    <Telescope size={21} />
-                  )}
-                </div>
-                <span>
-                  <strong>{r.label}</strong>
-                  <small>{r.model || r.name}</small>
-                </span>
-                <Chevron />
-              </button>
-            ))}
+                  <div
+                    className={
+                      "resource-icon " +
+                      (r.kind === "vehicle" ? "type-A" : "type-E")
+                    }
+                  >
+                    {r.kind === "vehicle" ? (
+                      <CarFront size={21} />
+                    ) : (
+                      <Telescope size={21} />
+                    )}
+                  </div>
+                  <span>
+                    <strong>{r.label}</strong>
+                    <small>{r.model || r.name}</small>
+                  </span>
+                  <Chevron />
+                </button>
+              ))}
+          </div>
         </aside>
         <section className="panel map-panel">
           <div className="list-tabs">
@@ -211,13 +242,30 @@ export function Positions() {
                 history();
               }}
             >
+              <Field label="時間範圍">
+                <select
+                  value={range}
+                  disabled={busy}
+                  onChange={(e) => changeRange(e.target.value)}
+                >
+                  <option value="30">30天</option>
+                  <option value="60">60天</option>
+                  <option value="90">90天</option>
+                  <option value="custom">自訂時間</option>
+                </select>
+              </Field>
               <Field label="開始時間">
                 <input
                   type="datetime-local"
                   step="1"
                   required
                   value={from}
-                  onChange={(e) => setFrom(e.target.value)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setFrom(e.target.value);
+                    setRange("custom");
+                    clearHistory();
+                  }}
                 />
               </Field>
               <Field label="結束時間">
@@ -226,7 +274,12 @@ export function Positions() {
                   step="1"
                   required
                   value={to}
-                  onChange={(e) => setTo(e.target.value)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setTo(e.target.value);
+                    setRange("custom");
+                    clearHistory();
+                  }}
                 />
               </Field>
               <button className="button primary" disabled={busy}>

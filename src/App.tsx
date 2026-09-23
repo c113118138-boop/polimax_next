@@ -53,6 +53,7 @@ const nav = [
     items: [
       ["/vehicles", "公務車輛", CarFront],
       ["/equipment", "儀器設備", Telescope],
+      ["/beacons", "Beacon 清單", Radio],
     ],
   },
   {
@@ -61,7 +62,6 @@ const nav = [
       ["/positions", "最新位置", MapPin],
       ["/scans", "場內掃描", Radio],
       ["/findmy", "Beacon 設備位置", MapPin],
-      ["/beacons", "Beacon 清單", Radio],
       ["/integrations", "資料來源與通知", ShieldCheck],
     ],
   },

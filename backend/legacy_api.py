@@ -8,7 +8,7 @@ import secrets
 import time
 import uuid
 import httpx
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -22,10 +22,10 @@ from sso import SSO, settings
 from legacy_store import Store, REASONS, E_REASONS, STATES, CHECKS_B, CHECKS_C, iso, now, dump, fail
 
 USERS={
- 'admin':{'id':'demo-admin','name':'林品安','email':'admin@example.test','role':'admin','role_label':'測試管理員'},
- 'borrower':{'id':'demo-borrower','name':'陳予晴','email':'borrower@example.test','role':'borrower','role_label':'測試借用人'},
+ 'admin':{'id':'demo-admin','name':'朱彥銘','email':'admin@example.test','role':'admin','role_label':'測試管理員'},
+ 'borrower':{'id':'demo-borrower','name':'夏辰旭','email':'borrower@example.test','role':'borrower','role_label':'測試借用人'},
  'draft':{'id':'demo-draft','name':'測試草稿員','email':'draft@example.test','role':'draft','role_label':'可新增但不可送出'},
- 'viewer':{'id':'demo-viewer','name':'周以恆','email':'viewer@example.test','role':'viewer','role_label':'測試唯讀使用者'},
+ 'viewer':{'id':'demo-viewer','name':'陳品旭','email':'viewer@example.test','role':'viewer','role_label':'測試唯讀使用者'},
 }
 class LoginInput(BaseModel): role:str
 class ResourceInput(BaseModel):
@@ -59,7 +59,7 @@ def create_app(root,data,url):
         app.state.store=Store(engine,root,data)
         app.state.policy=permissions.source() if test_auth else None
         try:
-            with sso.session_cleanup():
+            with (nullcontext() if test_auth else sso.session_cleanup()):
                 yield
         finally:
             engine.dispose()

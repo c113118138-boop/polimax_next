@@ -2259,6 +2259,12 @@ td strong {
   min-width: 0;
   margin: 18px 0 15px;
 }
+.map-resource-list {
+  max-height: min(475px, 55vh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
 .map-resource {
   display: flex;
   align-items: center;
@@ -2355,15 +2361,18 @@ td strong {
 }
 .trajectory-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 17px;
   align-items: flex-end;
 }
 .trajectory-filters > .field {
   margin: 0;
+  min-width: 150px;
   flex: 1;
 }
-.trajectory-filters input {
+.trajectory-filters input,
+.trajectory-filters select {
   font-size: 10px;
 }
 .trajectory-results {
@@ -2769,6 +2778,13 @@ td strong {
   .map-resources > .search-input {
     width: 100%;
     margin: 5px 0;
+  }
+  .map-resource-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    width: 100%;
+    max-height: min(240px, 30vh);
   }
   .map-resource {
     width: calc(50% - 5px);
