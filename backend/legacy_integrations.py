@@ -1,4 +1,6 @@
 """Read the existing tracking tables; keep external import/notification jobs separate."""
+from datetime import timedelta
+from gps_history import trajectory_rows
 import json
 import os
 from pathlib import Path
@@ -74,14 +76,14 @@ def install(app,store,current,check):
     def trajectory(rid:int,start:str,end:str,limit:int=1000,user=Depends(current)):
         check(user,'carMap','read');s,e=parse(start),parse(end)
         if s>=e:fail('結束時間必須晚於開始時間')
+        if e-s>timedelta(days=90):fail('單次最多查詢 90 天')
+        s=max(s,now()-timedelta(days=90))
+        if s>=e:return {'points':[],'count':0,'total':0}
         with store().session() as repo:
             r=repo.resource(rid);t=table(repo,'gps_readings')
             if t is None or not r.get('client_id'):return {'points':[],'count':0,'total':0}
-            q=select(t).where(t.c.client_id==r['client_id'],t.c.created_at>=s,t.c.created_at<e).order_by(t.c.created_at,t.c.id)
-            rows=repo.c.execute(q).mappings().all();points=[point(row) for row in rows]
-            points=[p for p in points if p['lat'] is not None and p['lng'] is not None and -90<=p['lat']<=90 and -180<=p['lng']<=180 and abs(p['lat'])>.001 and abs(p['lng'])>.001]
-            total=len(points);limit=max(2,min(limit,10000))
-            if total>limit:points=[points[round(i*(total-1)/(limit-1))] for i in range(limit)]
+            rows,total=trajectory_rows(repo.c,t,r['client_id'],s,e,max(2,min(limit,10000)))
+            points=[point(row) for row in rows]
             return {'points':points,'count':len(points),'total':total,'test_data':False}
     @app.get('/api/findmy/{ident}')
     def findmy(ident:str,user=Depends(current)):
@@ -129,4 +131,4 @@ def install(app,store,current,check):
     @app.post('/api/reports/sync')
     @app.post('/api/reports/import')
     def reports(user=Depends(current)):
-        check(user,'Administration','write');fail('定位資料由既有匯入程序寫入 MySQL；請在原系統更新。',409)
+        check(user,'Administration','write');fail('定位資料由既有匯入程序寫入資料庫；請在原系統更新。',409)

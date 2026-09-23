@@ -1,0 +1,76 @@
+"""Back up PostgreSQL and POLIMAX persistent files under the application write lock."""
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tarfile
+from datetime import datetime
+from pathlib import Path
+
+from sqlalchemy import create_engine, text
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'backend'))
+from database import configuration
+from settings import settings
+
+
+def digest(path):
+    h = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def main():
+    os.umask(0o077)
+    data, url, native = configuration(ROOT)
+    if not native or url.get_backend_name() != 'postgresql':
+        raise SystemExit('PostgreSQL mode required')
+    values = settings(ROOT)
+    parent = Path(values.get('AMS_BACKUP_DIR') or ROOT.parent / 'migration_backups' / 'scheduled')
+    parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(parent, 0o700)
+    destination = parent / datetime.now().strftime('%Y%m%d-%H%M%S')
+    destination.mkdir(mode=0o700)
+    db_path = destination / 'postgresql.dump'
+    files_path = destination / 'persistent.tar'
+    key_name = 'polimax:' + hashlib.sha256(str(url.database).encode()).hexdigest()[:32]
+    lock_key = int(hashlib.sha256(key_name.encode()).hexdigest()[:15], 16)
+    engine = create_engine(url, pool_pre_ping=True, connect_args={'connect_timeout': 10})
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SET statement_timeout = '60s'"))
+            connection.execute(text('SELECT pg_advisory_lock(:key)'), {'key': lock_key})
+            connection.commit()
+            try:
+                env = {**os.environ, 'PGPASSWORD': url.password}
+                subprocess.run([
+                    'pg_dump', '-h', url.host, '-p', str(url.port), '-U', url.username,
+                    '-d', url.database, '-Fc', '--no-owner', '--no-acl', '-f', str(db_path),
+                ], env=env, check=True, capture_output=True, text=True)
+                with tarfile.open(files_path, 'w') as archive:
+                    for relative in ('.data/responses', '.data/files', '.data/permissions', 'env', '.env'):
+                        path = ROOT / relative
+                        if path.exists():
+                            archive.add(path, arcname=relative)
+                manifest = {
+                    'database': url.database,
+                    'created_at': datetime.now().isoformat(timespec='seconds'),
+                    'postgresql.dump': digest(db_path),
+                    'persistent.tar': digest(files_path),
+                    'scope': 'database snapshot and application-locked persistent files',
+                }
+                (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+            finally:
+                connection.execute(text('SELECT pg_advisory_unlock(:key)'), {'key': lock_key})
+                connection.commit()
+    finally:
+        engine.dispose()
+    print('BACKUP_COMPLETE', destination)
+
+
+if __name__ == '__main__':
+    main()

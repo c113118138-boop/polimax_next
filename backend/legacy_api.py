@@ -45,6 +45,7 @@ def create_app(root,data,url):
     test_auth=auth_config.get("AMS_AUTH_MODE", "sso") == "test"
     sso=SSO(root,data)
     engine=create_engine(url,pool_pre_ping=True,hide_parameters=True,isolation_level='READ COMMITTED',connect_args={'connect_timeout':10})
+    database_label='PostgreSQL' if engine.dialect.name=='postgresql' else 'MySQL'
     data.mkdir(parents=True,exist_ok=True)
     key_path=data/'session.key'
     try:
@@ -56,10 +57,13 @@ def create_app(root,data,url):
     async def lifespan(app):
         # Reflect only. Application credentials never require CREATE or ALTER.
         app.state.store=Store(engine,root,data)
-        app.state.policy=permissions.source()
-        yield
-        engine.dispose()
-    app=FastAPI(title='POLIMAX MySQL API',lifespan=lifespan)
+        app.state.policy=permissions.source() if test_auth else None
+        try:
+            with sso.session_cleanup():
+                yield
+        finally:
+            engine.dispose()
+    app=FastAPI(title='POLIMAX API',lifespan=lifespan)
     app.state.engine=engine
     app.state.sso=sso
     if not test_auth:sso.install(app)
@@ -91,7 +95,7 @@ def create_app(root,data,url):
             return JSONResponse({'detail':'缺少有效的操作來源標記'},status_code=403)
         try:response=await call_next(request)
         except SQLAlchemyError:
-            response=JSONResponse({'detail':'MySQL 操作失敗，變更未儲存；請檢查連線或欄位限制。'},status_code=503)
+            response=JSONResponse({'detail':database_label+' 操作失敗，變更未儲存；請檢查連線或欄位限制。'},status_code=503)
         except OSError:
             response=JSONResponse({'detail':'無法讀寫舊表單或附件目錄，變更未完成。'},status_code=503)
         response.headers['Cache-Control']='no-store';response.headers['X-Content-Type-Options']='nosniff'
@@ -99,7 +103,7 @@ def create_app(root,data,url):
     @app.get('/api/health')
     def health():
         with engine.connect() as c:c.execute(text('SELECT 1'))
-        return {'ok':True,'database':'MySQL','mode':'legacy','test_data':False,'storage':'existing_tables_and_legacy_json','schema_changes_required':False}
+        return {'ok':True,'database':database_label,'mode':'legacy','test_data':False,'storage':'existing_tables_and_legacy_json','schema_changes_required':False}
     @app.post('/api/auth/login')
     def login(body:LoginInput,response:Response):
         if not test_auth or auth_config.get('PREVIEW_LOGIN_ENABLED','0')!='1':fail('本地測試登入已關閉',403)
@@ -119,10 +123,12 @@ def create_app(root,data,url):
     @app.get('/api/permissions/health')
     def policy_health(user=Depends(current)):
         check(user,'Administration','read')
-        return {'version':user['permissions']['version'],'source':'local-policy' if test_auth else 'legacy-AMS-snapshot','test_data':False,'available':True}
+        return {'version':user['permissions']['version'],'source':'local-policy' if test_auth or sso.config.get('AMS_POLICY_FILE') else 'project-AMS-snapshot','test_data':False,'available':True}
     @app.post('/api/permissions/sync')
     def sync(user=Depends(current)):
-        check(user,'Administration','write');app.state.policy=permissions.source();return {'version':policy()['version']}
+        check(user,'Administration','write')
+        if not test_auth:return {'version':sso.with_permissions(user)['permissions']['version']}
+        app.state.policy=permissions.source();return {'version':policy()['version']}
     @app.get('/api/options')
     def options(user=Depends(current)):
         import integrations
@@ -236,33 +242,30 @@ def create_app(root,data,url):
         limit=1024**3 if request.headers.get('x-file-purpose')=='stage-photo' else 10*1024*1024
         try:
             with path.open('xb') as out:
+                os.chmod(path,0o600)
                 async for chunk in request.stream():
                     size+=len(chunk)
                     if size>limit:fail('附件超過上限',413)
                     out.write(chunk)
+                out.flush();os.fsync(out.fileno())
             meta={'id':ident,'name':Path(unquote(request.headers.get('x-file-name','attachment'))).name[:255],'mime':request.headers.get('content-type','application/octet-stream'),'size':size,'owner':user['id']}
-            file_url=os.getenv('AMS_LEGACY_FILE_URL','https://uclerpnext.54ucl.com:3000').rstrip('/')
+            # Files and metadata belong to this deployment; never call the old service.
+            meta['uuid']=ident
+            metadata=store().files/(ident+'.json')
+            temporary=metadata.with_suffix('.tmp')
             try:
-                async with httpx.AsyncClient(timeout=180) as client:
-                    with path.open('rb') as file:
-                        result=await client.post(file_url+'/upload',files={'file':(meta['name'],file,meta['mime'])})
-                result.raise_for_status();payload=result.json()
-                file_id=payload.get('file_uuid') or payload.get('uuid')
-                import re
-                if not isinstance(file_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',file_id):raise ValueError()
-            except (httpx.HTTPError,ValueError):fail('舊檔案服務上傳失敗，請稍後重試',502)
-            finally:path.unlink(missing_ok=True)
-            meta.update(id=file_id,uuid=file_id)
-            (store().files/(file_id+'.json')).write_text(dump(meta));return meta
+                with temporary.open('x',encoding='utf-8') as out:
+                    json.dump(meta,out,ensure_ascii=False);out.flush();os.fsync(out.fileno())
+                os.replace(temporary,metadata)
+            finally:temporary.unlink(missing_ok=True)
+            return meta
         except BaseException:path.unlink(missing_ok=True);raise
     @app.get('/api/files/{ident}')
     def file(ident:str,preview:bool=False,user=Depends(current)):
         import re
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',ident):fail('無效附件識別碼',404)
         meta_path=store().files/(ident+'.json');path=store().files/ident
-        if not path.exists():
-            base=os.getenv('AMS_LEGACY_FILE_URL','https://uclerpnext.54ucl.com:3000').rstrip('/')
-            return RedirectResponse(base+('/preview/' if preview else '/file/')+ident,status_code=307)
+        if not path.exists():fail('附件尚未搬入新版或不存在',404)
         if not meta_path.exists():fail('找不到附件資訊',404)
         meta=json.loads(meta_path.read_text());safe=meta['mime'] in ('image/jpeg','image/png','image/webp','image/gif')
         return FileResponse(path,filename=meta['name'],media_type=meta['mime'] if safe else 'application/octet-stream',content_disposition_type='inline' if preview and safe else 'attachment')

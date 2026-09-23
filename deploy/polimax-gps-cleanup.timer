@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily POLIMAX location history cleanup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Taipei
+Persistent=true
+Unit=polimax-gps-cleanup.service
+
+[Install]
+WantedBy=timers.target

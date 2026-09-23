@@ -1,0 +1,21 @@
+[Unit]
+Description=POLIMAX Next
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polimax
+Group=polimax
+WorkingDirectory=/opt/polimax_next
+ExecStart=/opt/polimax_next/.venv/bin/python -m uvicorn app:app --app-dir /opt/polimax_next/backend --host 127.0.0.1 --port 5174
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/polimax_next/.data
+
+[Install]
+WantedBy=multi-user.target

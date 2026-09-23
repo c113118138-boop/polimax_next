@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import time
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -59,15 +60,19 @@ def room_labels(value):
     bracket=re.search(r'\((.*?)\)',value)
     return array(bracket.group(1)) if bracket else array(value)
 
+from settings import settings, local_path
+
 class Store:
     def __init__(self, engine, root, data):
         self.engine=engine; self.root=Path(root); self.data=Path(data)
-        self.responses=Path(os.getenv('AMS_LEGACY_RESPONSES_DIR', str(self.root.parent/'polimax_carAPI_on'/'回應')))
+        config=settings(self.root)
+        self.responses=local_path(self.root,config.get('AMS_RESPONSES_DIR') or config.get('AMS_LEGACY_RESPONSES_DIR') or str(self.data/'responses'))
         self.files=self.data/'files';self.files.mkdir(parents=True,exist_ok=True)
         metadata=MetaData()
         names=[v[0] for v in ASSETS.values()]+[v[0] for v in RECORDS.values()]+['formio_responses','form_flows']
         self.tables={name:Table(name,metadata,autoload_with=engine) for name in names}
         self.lock_name='polimax:'+hashlib.sha256(str(engine.url.database).encode()).hexdigest()[:32]
+        self.lock_key=int(hashlib.sha256(self.lock_name.encode()).hexdigest()[:15],16)
 
     @contextmanager
     def session(self, write=False):
@@ -76,7 +81,14 @@ class Store:
             locked=False
             try:
                 if write:
-                    locked=connection.execute(text('SELECT GET_LOCK(:name, 15)'),{'name':self.lock_name}).scalar()==1
+                    if connection.dialect.name == 'postgresql':
+                        deadline=time.monotonic()+15
+                        while True:
+                            locked=connection.execute(text('SELECT pg_try_advisory_lock(:key)'),{'key':self.lock_key}).scalar() is True
+                            if locked or time.monotonic() >= deadline: break
+                            time.sleep(.1)
+                    else:
+                        locked=connection.execute(text('SELECT GET_LOCK(:name, 15)'),{'name':self.lock_name}).scalar()==1
                     if not locked: fail('其他表單正在儲存，請稍後重試',409)
                     connection.commit()
                 yield repo
@@ -88,7 +100,10 @@ class Store:
                 connection.rollback();repo.restore_files();raise
             finally:
                 if locked:
-                    connection.execute(text('SELECT RELEASE_LOCK(:name)'),{'name':self.lock_name})
+                    if connection.dialect.name == 'postgresql':
+                        connection.execute(text('SELECT pg_advisory_unlock(:key)'),{'key':self.lock_key})
+                    else:
+                        connection.execute(text('SELECT RELEASE_LOCK(:name)'),{'name':self.lock_name})
                     connection.commit()
 
     def path(self, fid):
@@ -493,7 +508,7 @@ class Repository:
                 value=content['start'][key]
                 if key in ('tires','interior','exterior','equipment') and value=='異狀':value='異狀備註'
                 if key.endswith('_files'):
-                    value=[{**f,'storage':'url','url':os.getenv('AMS_LEGACY_FILE_URL','https://uclerpnext.54ucl.com:3000').rstrip('/')+'/preview/'+f['id'],'data':{'uuid':f['id']}} for f in value]
+                    value=[{**f,'storage':'url','url':'/api/files/'+f['id']+'?preview=true','data':{'uuid':f['id']}} for f in value]
                 raw[col]=value
         for label,col in STAGE_CHECKS[fid[5]].items():raw[col]=label in content['start'].get('checks',[])
         if 'arrival' in content:

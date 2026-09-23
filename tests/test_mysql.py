@@ -25,13 +25,13 @@ with admin.begin() as c:
     c.exec_driver_sql("INSERT INTO form_flows (form_id,status) VALUES ('11509A0099','PENDING')")
 
 folder = tempfile.TemporaryDirectory(prefix='polimax-mysql-files-')
-legacy_root=Path(folder.name)/'回應'
+legacy_root=Path(folder.name)/'responses'
 (legacy_root/'主表').mkdir(parents=True)
 (legacy_root/'主表'/'11509A0099.json').write_text(json.dumps({'content':{'Form_Type':'主表','Requirement_select':'工案','applicantID':'old-user','RequireOption_Memo':'舊 JSON 備註','usageTimeRegistration':['王小明','李小華'],'Reason_Case_Grid':[{'Case_ID_and_name':'既有完整案件','Reason_Case_city':'新竹市','reasonCaseGridSelect':'東區'}]}},ensure_ascii=False))
 (legacy_root/'發車紀錄表').mkdir()
 (legacy_root/'發車紀錄表'/'11509B0040.json').write_text(json.dumps({'Form_Type':'發車紀錄表','parent_form_id':'11509A0099','panel6':'REAL-001','panelTable11Text2':'王小明','panelTableText':'100','panelTable9':True,'page1Text':'150','page2':True,'panelTableRadio':'異狀備註','panelTable12':'需清潔'},ensure_ascii=False))
 os.environ.update(AMS_AUTH_MODE='test',PREVIEW_LOGIN_ENABLED='1',AMS_DATABASE_MODE='mysql',MYSQL_HOST='127.0.0.1',MYSQL_PORT='13316',
-    MYSQL_DATABASE=schema,MYSQL_USER='polimax_test',MYSQL_PASSWORD='isolated-test',PREVIEW_DATA_DIR=folder.name,AMS_LEGACY_RESPONSES_DIR=folder.name+'/回應')
+    MYSQL_DATABASE=schema,MYSQL_USER='polimax_test',MYSQL_PASSWORD='isolated-test',PREVIEW_DATA_DIR=folder.name)
 sys.path.insert(0,str(ROOT/'backend'))
 import app as a
 from fastapi.testclient import TestClient
@@ -137,22 +137,25 @@ class MySQLContracts(unittest.TestCase):
             return self.client.post('/api/bookings',json=concurrent,headers={'x-ams-client':'preview'}).status_code
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(reserve,range(2))),[200,409])
-        # Existing file-service contract, using a mock: no real file is uploaded.
-        import httpx
+        # Standalone attachment storage: no external HTTP client may be used.
         from unittest.mock import patch
-        original_client=httpx.AsyncClient
-        transport=httpx.MockTransport(lambda request:httpx.Response(200,json={'file_uuid':'legacy-file-123'}))
-        with patch('legacy_api.httpx.AsyncClient',lambda **kwargs:original_client(transport=transport,**kwargs)):
+        with patch('legacy_api.httpx.AsyncClient',side_effect=AssertionError('external attachment request')):
             upload=self.client.post('/api/files',content=b'isolated-test',headers={'x-ams-client':'preview','x-file-name':'note.txt','content-type':'text/plain'})
         self.assertEqual(upload.status_code,200,upload.text)
-        self.assertEqual(upload.json()['id'],'legacy-file-123')
-        response=self.client.get('/api/files/legacy-file-123',follow_redirects=False)
-        self.assertEqual(response.status_code,307)
-        self.assertTrue(response.headers['location'].endswith('/file/legacy-file-123'))
+        file_id=upload.json()['id']
+        response=self.client.get('/api/files/'+file_id,follow_redirects=False)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.content,b'isolated-test')
+        self.assertIn('attachment',response.headers['content-disposition'])
+        self.assertEqual(self.client.get('/api/files/not-migrated').status_code,404)
+        image=self.client.post('/api/files',content=b'image-bytes',headers={'x-ams-client':'preview','x-file-name':'photo.png','content-type':'image/png'})
+        preview=self.client.get('/api/files/'+image.json()['id']+'?preview=true')
+        self.assertEqual(preview.status_code,200)
+        self.assertIn('inline',preview.headers['content-disposition'])
         attached=self.request('POST',f"/resources/{car['id']}/records",{'category':'garage','data':{'notes':'附件相容','attachments':[upload.json()]}})
         with a.engine.connect() as c:
             value=c.execute(text('SELECT attachment_uuids FROM garage_files WHERE sn=:sn'),{'sn':attached['id']//10}).scalar()
-            self.assertEqual(json.loads(value)[0]['uuid'],'legacy-file-123')
+            self.assertEqual(json.loads(value)[0]['uuid'],file_id)
         # A legacy D row may contain several numbered areas inside parentheses.
         with a.engine.begin() as c:
             c.execute(text("INSERT INTO formio_responses (form_id,reason,place,start,end,plate,employees,applicant_ID) VALUES ('11509D0040','工作間租用','批覆區(1-1, 1-2)','2026-09-22 09:00:00','2026-09-22 12:00:00','','','old-user')"))

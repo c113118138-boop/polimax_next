@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily POLIMAX PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+Unit=polimax-pg-backup.service
+
+[Install]
+WantedBy=timers.target
