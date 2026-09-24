@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Apple FindMy location import
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+Unit=polimax-findmy-import.service
+
+[Install]
+WantedBy=timers.target

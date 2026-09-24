@@ -132,6 +132,8 @@ PostgreSQL 保存 `CarList`、`EquipmentList`、`formio_responses`、`form_flows
 
 備份／搬機需一致保存 PostgreSQL、responses、files 與 permissions；每日備份由 `polimax-pg-backup.timer` 執行。搬到新主機可不搬 `sso/`，讓使用者重新登入。不要讓不同入口對同一資料庫寫入卻各自保存不同表單 JSON。
 
+歷史資料採「先封存、讀回驗證、再刪除」流程，封存庫為同主機的 `polimax_PostgreSQL_Expired`。業務完成條件、初始化、管理頁面及雙庫備份見 [歷史封存與清理](deploy/ARCHIVE_RETENTION.md)。未完成初始化與啟用前不執行刪除。
+
 ## 5. 程式位置速查
 
 | 檔案 | 責任 |

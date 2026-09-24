@@ -35,6 +35,7 @@ import { Assets, AssetDetail } from "./Assets";
 import { Positions, Scans, FindMy } from "./Maps";
 import { StageList, StagePage } from "./Stages";
 import { Beacons, Integrations } from "./Admin";
+import Archive from "./Archive";
 import { Guard, can } from "./Access";
 const UserContext = createContext<User>(null!);
 export const useUser = () => useContext(UserContext);
@@ -63,6 +64,7 @@ const nav = [
       ["/scans", "場內掃描", Radio],
       ["/findmy", "Beacon 設備位置", MapPin],
       ["/integrations", "資料來源與通知", ShieldCheck],
+      ["/archive", "歷史封存", ClipboardList],
     ],
   },
 ];
@@ -203,6 +205,12 @@ function Shell() {
   const u = useUser(),
     location = useLocation(),
     navigate = useNavigate();
+  const archiveStatus = useQuery({
+    queryKey: ["archive-status"],
+    queryFn: () => api<{ enabled: boolean }>("/archive/status"),
+    enabled: can(u, "Administration"),
+    retry: false,
+  });
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(false),
     [create, setCreate] = useState(false),
@@ -244,7 +252,8 @@ function Shell() {
               {group.items
                 .filter(
                   ([path]: any) =>
-                    path !== "/integrations" || can(u, "Administration"),
+                    (!["/integrations", "/archive"].includes(path as string) || can(u, "Administration")) &&
+                    (path !== "/archive" || archiveStatus.data?.enabled),
                 )
                 .map(([path, label, Icon]: any) => (
                   <NavLink
@@ -333,6 +342,7 @@ function Shell() {
         </header>
         <main>
           <Routes>
+            <Route path="/archive" element={<Guard doc="Administration"><Archive /></Guard>} />
             <Route
               path="/"
               element={<CalendarPage onCreate={() => setCreate(true)} />}

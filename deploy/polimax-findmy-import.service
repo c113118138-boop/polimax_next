@@ -1,0 +1,13 @@
+[Unit]
+Description=Import Apple FindMy location reports into POLIMAX PostgreSQL
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/home/c113118138/polimax_carAPI_on/account.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/c113118138/polimax_carAPI_on
+ExecStart=/home/c113118138/.venvs/polimax-findmy/bin/python /home/c113118138/polimax_carAPI_on/findmyupdate.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

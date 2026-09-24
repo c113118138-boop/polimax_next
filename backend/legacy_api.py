@@ -271,6 +271,8 @@ def create_app(root,data,url):
         return FileResponse(path,filename=meta['name'],media_type=meta['mime'] if safe else 'application/octet-stream',content_disposition_type='inline' if preview and safe else 'attachment')
     from legacy_integrations import install
     install(app,store,current,check)
+    from archive_api import install as install_archive
+    install_archive(app,store,current,check)
     @app.get('/{path:path}')
     def frontend(path:str):
         if path.startswith('api/'):fail('找不到 API',404)

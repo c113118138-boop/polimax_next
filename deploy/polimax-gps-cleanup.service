@@ -1,8 +1,8 @@
 [Unit]
-Description=POLIMAX GPS and Beacon location 90-day retention
+Description=POLIMAX verified archive and 90-day retention
 
 [Service]
 Type=oneshot
 WorkingDirectory=/home/c113118138/polimax_next
-ExecStart=/home/c113118138/polimax_next/.venv/bin/python scripts/gps_maintenance.py --apply
+ExecStart=/home/c113118138/polimax_next/.venv/bin/python scripts/archive_maintenance.py --apply
 UMask=0077

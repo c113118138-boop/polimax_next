@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 from database import configuration
 from settings import settings
+from retention import archive_url
 
 
 def digest(path):
@@ -36,6 +37,7 @@ def main():
     destination = parent / datetime.now().strftime('%Y%m%d-%H%M%S')
     destination.mkdir(mode=0o700)
     db_path = destination / 'postgresql.dump'
+    expired_path = destination / 'expired.dump'
     files_path = destination / 'persistent.tar'
     key_name = 'polimax:' + hashlib.sha256(str(url.database).encode()).hexdigest()[:32]
     lock_key = int(hashlib.sha256(key_name.encode()).hexdigest()[:15], 16)
@@ -51,6 +53,15 @@ def main():
                     'pg_dump', '-h', url.host, '-p', str(url.port), '-U', url.username,
                     '-d', url.database, '-Fc', '--no-owner', '--no-acl', '-f', str(db_path),
                 ], env=env, check=True, capture_output=True, text=True)
+                # The same source advisory lock excludes the archive worker, so
+                # these dumps cannot straddle an archive-and-delete batch.
+                expired_url = archive_url(url, ROOT)
+                archive_enabled = values.get('AMS_ARCHIVE_ENABLED', '0') == '1'
+                if archive_enabled:
+                    subprocess.run([
+                        'pg_dump', '-h', expired_url.host, '-p', str(expired_url.port), '-U', expired_url.username,
+                        '-d', expired_url.database, '-Fc', '--no-owner', '--no-acl', '-f', str(expired_path),
+                    ], env=env, check=True, capture_output=True, text=True)
                 with tarfile.open(files_path, 'w') as archive:
                     for relative in ('.data/responses', '.data/files', '.data/permissions', 'env', '.env'):
                         path = ROOT / relative
@@ -60,9 +71,12 @@ def main():
                     'database': url.database,
                     'created_at': datetime.now().isoformat(timespec='seconds'),
                     'postgresql.dump': digest(db_path),
+                    'archive_database': expired_url.database if archive_enabled else None,
                     'persistent.tar': digest(files_path),
                     'scope': 'database snapshot and application-locked persistent files',
                 }
+                if archive_enabled:
+                    manifest['expired.dump'] = digest(expired_path)
                 (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
             finally:
                 connection.execute(text('SELECT pg_advisory_unlock(:key)'), {'key': lock_key})
