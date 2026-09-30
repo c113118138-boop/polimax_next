@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
+import geoalchemy2  # Registers PostGIS types for SQLAlchemy reflection.
 from sqlalchemy import MetaData, Table, select, insert, update, func, text, or_
 from legacy_schema import ASSETS, RECORDS, array
 

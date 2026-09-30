@@ -1,51 +1,29 @@
-# FindMy PostgreSQL import
+# FindMy 獨立部署
 
-`findmyupdate.py` now reads enabled device keys from PostgreSQL `BeaconList` and
-appends each fetched location to both `FindMy` and `new_reports` in the same
-PostgreSQL transaction. This keeps the existing FindMy endpoint and history
-retention/archive rules working without using the legacy MySQL connection.
+程式位於 `integrations/findmy/`，從本專案 `.env`／`env` 讀取 PostgreSQL 設定，不需要舊專案。匯入器只允許目標 PostgreSQL 資料庫名稱 `polimax_PostgreSQL`，並將裝置回報寫入 `FindMy` 與 `new_reports`。
 
-This host has the isolated FindMy 0.10.2 runtime installed at
-`/home/c113118138/.venvs/polimax-findmy`. To recreate it on a fresh host:
+在專案根目錄執行：
 
 ```sh
-python3 -m venv /home/c113118138/.venvs/polimax-findmy
-/home/c113118138/.venvs/polimax-findmy/bin/python -m pip install -r /home/c113118138/polimax_carAPI_on/requirements-findmy.txt
+python3 -m venv .venv-findmy
+.venv-findmy/bin/python -m pip install -r integrations/findmy/requirements.txt
+.venv-findmy/bin/python integrations/findmy/create_findmy_session.py
 ```
 
-Create the Apple session interactively on the host. The password and 2FA code
-are hidden while typed, and the resulting `account.json` is restricted to the
-service account (`0600`):
+Apple 密碼及 2FA 由互動方式輸入。登入資料存於 `AMS_DATA_DIR/findmy/account.json`，Anisette 快取存於同目錄的 `ani_libs.bin`；預設 `AMS_DATA_DIR=.data`。兩者為私密資料，不進 Git，搬機時需妥善複製，或重新登入。首次使用可能需要從 Apple 下載支援套件。
+
+`deploy/polimax-findmy-import.service` 與 `.timer` 提供每小時匯入。範本假設專案在 `%h/polimax_next` 且使用 `.data`；若位置或資料目錄改變，需修改服務路徑及 `ConditionPathExists`。安裝至 `~/.config/systemd/user/` 後執行：
 
 ```sh
-cd /home/c113118138/polimax_carAPI_on
-/home/c113118138/.venvs/polimax-findmy/bin/python create_findmy_session.py
-```
-
-Complete any Apple 2FA prompt on the trusted device or by SMS. Keep
-`account.json` private; it contains session credentials and must not be
-committed, copied into logs, or sent in chat. FindMy 0.10 generates Anisette
-data locally, so this flow no longer depends on the unavailable remote
-Anisette server. The library downloads its Apple support bundle on first use
-and caches it under `/home/c113118138/.local/share/polimax-findmy/`. The
-scheduled importer runs once per hour. This host already has its user-level
-timer enabled; it skips the import until `account.json` exists. Once the session
-is ready, start an immediate import with:
-
-```sh
+systemctl --user daemon-reload
+systemctl --user enable --now polimax-findmy-import.timer
 systemctl --user start polimax-findmy-import.service
 ```
 
-The service uses `/home/c113118138/.venvs/polimax-findmy` and requires the
-session file in its working directory; it will not prompt for credentials.
-
-Run a one-time import manually with:
+排程要求已有 Apple session，不會詢問帳密。手動單次執行：
 
 ```sh
-cd /home/c113118138/polimax_carAPI_on
-/home/c113118138/.venvs/polimax-findmy/bin/python findmyupdate.py
+.venv-findmy/bin/python integrations/findmy/findmyupdate.py
 ```
 
-The importer refuses any configured database other than PostgreSQL
-`polimax_PostgreSQL`. It does not log private keys, coordinates, or report
-contents.
+FindMy 環境包含後端 requirements，避免匯入資料庫設定時缺少 GeoAlchemy2。資料寫入具去重處理。

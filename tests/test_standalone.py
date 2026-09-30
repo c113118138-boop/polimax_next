@@ -41,6 +41,8 @@ class StandaloneTests(unittest.TestCase):
                 'docFields':[],'uiPermissions':[],'userPermissions':[]}}
             (folder/'snapshot.json').write_text(json.dumps(payload))
             (folder/'latest-AMS.json').write_text(json.dumps({'file':'snapshot.json'}))
+            self.assertTrue(sso.with_permissions(identity)['permissions']['forms']['Lending_form']['read'])
+            sso.config['AMS_SSO_POLICY_MANIFEST']='persistent/permissions/latest-AMS.json'
             user=sso.with_permissions(identity)
             self.assertTrue(user['permissions']['forms']['Lending_form']['read'])
             self.assertFalse(user['permissions']['forms']['Lending_form']['write'])

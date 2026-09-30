@@ -1,5 +1,7 @@
 # 獨立部署與切換
 
+> 獨立部署請先看 [2026-09-30 依賴盤點與搬機清單](STANDALONE.md)。
+
 > 2026-09-22 已切換正式網站至 PostgreSQL；本頁較早的 MySQL 部署敘述為歷史記錄。請先看 [切換紀錄](../POSTGRESQL_MIGRATION_BASELINE.md) 與 [回復草案](../POSTGRESQL_CUTOVER_RUNBOOK.md)。
 
 新版只需要本專案、目前 MySQL、公司 SSO，以及自己的持久資料目錄。不需要舊 Python 專案或舊檔案服務。MySQL 仍使用既有結構，不執行 schema migration。backend/legacy_* 的命名代表資料格式相容，不代表匯入舊專案程式。
@@ -101,3 +103,7 @@ journalctl --user -u polimax-next@5174 -n 100 --no-pager
 修改前端後先 npm run build；後端修改後使用上面的 restart。
 已驗證兩個服務 enabled/active，5173、5174 及 Nginx 的網頁和 MySQL health
 均回應 HTTP 200。本次沒有實際重開機。
+
+### SSO session 清理
+
+SSO 模式由後端生命週期啟動清理工作，每天 Asia/Taipei 時間 00:00 刪除 `expires` 已到期的 `session-*.json`。保留未到期資料與共用鎖檔；兩個服務使用相同 session 鎖，避免與登入驗證或登出競爭。服務需保持運行；停機期間不執行，重啟後等待下一個午夜。目前登入有效期維持 12 小時，到期後 API 會拒絕使用，與午夜檔案清理時間分開。

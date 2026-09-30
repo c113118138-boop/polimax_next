@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from settings import settings, data_path
+import geoalchemy2  # Registers PostGIS types for SQLAlchemy reflection.
 from sqlalchemy import URL
 
 

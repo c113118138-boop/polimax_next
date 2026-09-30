@@ -51,6 +51,39 @@ class SSOTests(unittest.TestCase):
         state=self.start();r=self.client.get('/api/callback',params={'state':state,'code':'authorization-code'},follow_redirects=False)
         self.assertEqual(r.headers['location'],'http://testserver/vehicles')
         return state
+    def test_cleanup_only_expired_sessions(self):
+        expired = self.sso.path('a'*64, 'session')
+        active = self.sso.path('b'*64, 'session')
+        state = self.sso.path('c'*64, 'state')
+        broken = self.sso.path('d'*64, 'session')
+        self.sso.write(expired, {'expires':100})
+        self.sso.write(active, {'expires':101})
+        self.sso.write(state, {'expires':99})
+        broken.write_text('invalid json')
+        self.assertEqual(self.sso.cleanup_expired_sessions(100), 1)
+        self.assertFalse(expired.exists())
+        self.assertTrue(active.exists())
+        self.assertTrue(state.exists())
+        self.assertTrue(broken.exists())
+        self.assertEqual(self.sso.cleanup_expired_sessions(100), 0)
+
+    def test_cleanup_midnight_taipei(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo('Asia/Taipei')
+        for hour in (0, 12, 23):
+            now = datetime(2026, 9, 30, hour, 0, tzinfo=tz)
+            expected = datetime(2026, 10, 1, tzinfo=tz)
+            self.assertEqual(self.sso.next_cleanup_at(now.timestamp()), expected.timestamp())
+
+    def test_cleanup_lifecycle(self):
+        import threading
+        with self.sso.session_cleanup():
+            workers = [t for t in threading.enumerate() if t.name == 'sso-session-cleanup']
+            self.assertEqual(len(workers), 1)
+            self.assertTrue(workers[0].is_alive())
+        self.assertFalse(workers[0].is_alive())
+
     def test_login_permissions_and_server_tokens(self):
         self.login();r=self.client.get('/me');self.assertEqual(r.status_code,200,r.text)
         user=r.json();self.assertEqual(user['id'],'verified-id');self.assertEqual(user['name'],'王小明')

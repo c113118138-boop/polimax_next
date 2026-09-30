@@ -6,3 +6,5 @@ psycopg[binary]==3.3.6
 pydantic==2.11.4
 python-dotenv==1.1.1
 httpx==0.28.1
+GeoAlchemy2[shapely]==0.18.0
+Shapely==2.1.2

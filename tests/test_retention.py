@@ -102,6 +102,65 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in self.rows(self.target, 'gps_readings')], [1, 2])
         self.assertEqual(self.run_archive(['gps_readings'])[0]['rows'], 0)
 
+    def test_postgis_location_sync_and_archive(self):
+        # Real PostGIS in the disposable cluster, never the production database.
+        from geoalchemy2 import Geography
+        from gps_history import trajectory_rows
+        migration = (ROOT / 'scripts/add_location.sql').read_text()
+        migration = migration[migration.index('BEGIN;'):migration.index('COMMIT;')]
+        migration = migration.removeprefix('BEGIN;')
+        for engine in (self.source, self.target):
+            with engine.begin() as c:
+                c.exec_driver_sql('CREATE EXTENSION postgis')
+                c.exec_driver_sql('ALTER TABLE gps_readings ADD COLUMN longitude numeric(11,8)')
+                for name in ('new_reports', 'FindMy'):
+                    c.exec_driver_sql(f'CREATE TABLE "{name}" (id integer PRIMARY KEY, latitude double precision, longitude double precision)')
+                c.execute(text(migration))
+        self.tables = r.initialize(self.source, self.target)
+        table = self.tables['gps_readings']
+        self.assertIsInstance(table.c.location.type, Geography)
+        self.seed_gps()
+        with self.source.begin() as c:
+            c.execute(update(table).where(table.c.id.in_([1, 2, 3])).values(longitude='121.50000000'))
+            xy = c.execute(text('SELECT ST_X(location::geometry), ST_Y(location::geometry) FROM gps_readings WHERE id=1')).one()
+            self.assertAlmostEqual(xy[0], 121.5)
+            self.assertAlmostEqual(xy[1], 25.12345678)
+            distance = c.execute(text("SELECT ST_Distance(location, ST_SetSRID(ST_MakePoint(121.5, 25.12445678),4326)::geography) FROM gps_readings WHERE id=1")).scalar_one()
+            self.assertTrue(100 < distance < 120)
+            points, total = trajectory_rows(c, table, 'device', self.old-timedelta(days=1), self.recent+timedelta(days=1), 10)
+            self.assertEqual(total, 3)
+            self.assertEqual(float(points[0]['longitude']), 121.5)
+            c.execute(update(table).where(table.c.id == 4).values(latitude=91, longitude=121))
+            self.assertIsNone(c.execute(select(table.c.location).where(table.c.id == 4)).scalar())
+            original = r.canonical(dict(c.execute(select(table).where(table.c.id == 1)).mappings().one()))
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from legacy_integrations import install
+        resource = {'id': 1, 'kind': 'vehicle', 'label': 'test', 'client_id': 'device'}
+        @contextmanager
+        def session():
+            with self.source.connect() as c:
+                yield SimpleNamespace(c=c, t={}, resources=lambda: [resource], resource=lambda rid: resource)
+        app = FastAPI()
+        install(app, lambda: SimpleNamespace(session=session), lambda: {}, lambda *args: None)
+        with TestClient(app) as client:
+            response = client.get('/api/positions')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()[0]['lng'], 121.5)
+            response = client.get('/api/trajectory/1', params={
+                'start': (self.recent-timedelta(days=1)).isoformat(),
+                'end': (self.recent+timedelta(days=1)).isoformat()})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['points'][0]['lng'], 121.5)
+        self.run_archive(['gps_readings'])
+        self.assertEqual([row['id'] for row in self.rows(self.source, 'gps_readings')], [3, 4, 5])
+        archived = self.rows(self.target, 'gps_readings')
+        self.assertEqual([row['id'] for row in archived], [1, 2])
+        self.assertEqual(r.canonical(archived[0]), original)
+        with self.target.connect() as c:
+            self.assertIsNotNone(c.execute(select(r.batches.c.verified_at)).first()[0])
+        self.assertEqual(self.run_archive(['gps_readings'])[0]['rows'], 0)
+
     def test_sensor_preserves_latest_received_and_latest_recorded(self):
         for ident, received, recorded in [(1, 0, 0), (2, 3, 1), (3, 2, 4)]:
             self.add('sensor_readings', id=ident, client_id='station', major=10,

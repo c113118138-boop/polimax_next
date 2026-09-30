@@ -31,7 +31,9 @@ def main():
     if not native or url.get_backend_name() != 'postgresql':
         raise SystemExit('PostgreSQL mode required')
     values = settings(ROOT)
-    parent = Path(values.get('AMS_BACKUP_DIR') or ROOT.parent / 'migration_backups' / 'scheduled')
+    parent = Path(values.get('AMS_BACKUP_DIR') or ROOT / '.backups' / 'scheduled')
+    if not parent.is_absolute():
+        parent = ROOT / parent
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(parent, 0o700)
     destination = parent / datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -63,7 +65,7 @@ def main():
                         '-d', expired_url.database, '-Fc', '--no-owner', '--no-acl', '-f', str(expired_path),
                     ], env=env, check=True, capture_output=True, text=True)
                 with tarfile.open(files_path, 'w') as archive:
-                    for relative in ('.data/responses', '.data/files', '.data/permissions', 'env', '.env'):
+                    for relative in ('.data/responses', '.data/files', '.data/permissions', '.data/findmy', 'env', '.env'):
                         path = ROOT / relative
                         if path.exists():
                             archive.add(path, arcname=relative)

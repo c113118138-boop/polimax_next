@@ -6,6 +6,10 @@ import logging
 import os
 import secrets
 import time
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+from threading import Event, Thread
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -14,6 +18,7 @@ from dotenv import dotenv_values
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 import permissions
+from settings import local_path
 
 
 def settings(root):
@@ -44,6 +49,57 @@ class SSO:
         self.directory=data/'sso';self.directory.mkdir(parents=True,exist_ok=True,mode=0o700)
         os.chmod(self.directory,0o700)
         self.cookie='polimax_session';self.state_cookie='polimax_sso_state'
+    @staticmethod
+    def next_cleanup_at(now):
+        local = datetime.fromtimestamp(now, ZoneInfo('Asia/Taipei'))
+        return (local.replace(hour=0, minute=0, second=0, microsecond=0)
+                + timedelta(days=1)).timestamp()
+
+    def cleanup_expired_sessions(self, now=None):
+        cutoff = time.time() if now is None else now
+        removed = 0
+        for path in self.directory.glob('session-*.json'):
+            # Use the same lock as current()/logout(); keep lock files so
+            # concurrent processes never lock different inodes for a session.
+            try:
+                with path.with_suffix('.lock').open('a') as handle:
+                    os.chmod(handle.name, 0o600)
+                    fcntl.flock(handle, fcntl.LOCK_EX)
+                    if not path.exists():
+                        continue
+                    record = json.loads(path.read_text())
+                    expiry = record.get('expires')
+                    if isinstance(expiry, (int, float)) and expiry <= cutoff:
+                        path.unlink(missing_ok=True)
+                        removed += 1
+            except (OSError, ValueError, TypeError, AttributeError):
+                logging.getLogger(__name__).warning('Could not clean session file %s', path.name)
+        return removed
+
+    @contextmanager
+    def session_cleanup(self):
+        stop = Event()
+
+        def run():
+            deadline = self.next_cleanup_at(time.time())
+            while not stop.wait(min(60, max(0, deadline - time.time()))):
+                if time.time() < deadline:
+                    continue
+                try:
+                    count = self.cleanup_expired_sessions()
+                    logging.getLogger(__name__).info('Expired session cleanup: %d removed', count)
+                except Exception:
+                    logging.getLogger(__name__).exception('Session cleanup failed')
+                deadline = self.next_cleanup_at(time.time())
+
+        worker = Thread(target=run, name='sso-session-cleanup', daemon=True)
+        worker.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            worker.join(timeout=5)
+
     @property
     def configured(self):
         return bool(self.client_id and self.secret and urlsplit(self.server).scheme in ('http','https') and urlsplit(self.public).netloc)
@@ -93,7 +149,7 @@ class SSO:
     def with_permissions(self,identity):
         config=self.config
         if config.get('AMS_POLICY_FILE'):
-            try:policy=permissions.validate(json.loads(Path(config['AMS_POLICY_FILE']).read_text()))
+            try:policy=permissions.validate(json.loads(local_path(self.root, config['AMS_POLICY_FILE']).read_text()))
             except (OSError,ValueError):raise HTTPException(503,'無法讀取 AMS 權限政策')
             import copy
             policy=copy.deepcopy(policy)
@@ -101,7 +157,7 @@ class SSO:
             for key in (identity['id'],identity['email'],identity.get('username','')):roles.extend(policy['user_roles'].get(key,[]))
             policy['user_roles'][identity['id']]=list(dict.fromkeys(roles))
         else:
-            manifest=Path(config.get('AMS_SSO_POLICY_MANIFEST',str(self.root.parent/'polimax_carAPI_on/mini-engine/data/snapshots/latest-AMS.json')))
+            manifest=local_path(self.root, config.get('AMS_SSO_POLICY_MANIFEST') or str(self.directory.parent/'permissions/latest-AMS.json'))
             try:
                 meta=json.loads(manifest.read_text());snapshot=json.loads((manifest.parent/Path(meta['file']).name).read_text())
                 source=snapshot['data']

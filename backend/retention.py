@@ -10,6 +10,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import geoalchemy2  # Registers PostGIS types for SQLAlchemy reflection.
 from sqlalchemy import (MetaData, Table, Column, String, Text, DateTime, LargeBinary,
                         Integer, Index, select, insert, delete, text, inspect, func, cast)
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert

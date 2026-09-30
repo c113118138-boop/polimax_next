@@ -1,5 +1,7 @@
 # POLIMAX Next / AMS 交接手冊
 
+> 獨立部署請先看 [2026-09-30 依賴盤點與搬機清單](deploy/STANDALONE.md)。
+
 > 2026-09-22 已切換正式網站與定位接收器至 PostgreSQL；MySQL 保留作回復。本文部分 MySQL 敘述記錄原系統與歷史部署流程，最新狀態見 [切換紀錄](POSTGRESQL_MIGRATION_BASELINE.md)。
 
 車輛、儀器與工作間的資產／預約管理系統，使用 React + TypeScript + Vite 前端與 FastAPI 後端，已由既有 MySQL 結構遷移至 PostgreSQL，並使用公司 SSO。
